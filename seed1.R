@@ -1,4 +1,5 @@
 ###running basic seed lm###
+#this script checks how germination and seed count changes with rain and competition#
 library(dplyr)
 library(tidyverse)
 library(car)
@@ -8,7 +9,6 @@ library(visreg)
 library(DHARMa)
 library(emmeans)
 library(ggeffects)
-setwd("C:/Users/emmau/OneDrive/Documents/MSc/field data/datasheets")
 seed<-read.csv("PlantGermSeedNT.csv")
 View(seed)
 seed%>%count(tubepres == "N") #in this dataset, 90 tubes (15%) are not found. These are not data points for the following analysis and do not count towards non-germination, so they will now be removed from the dataset.
@@ -41,15 +41,14 @@ vis<-ggpredict(lm3, terms=c("raintreat","comp"),type="fe")
 plot(vis)
 vis2<-ggpredict(lm3, terms=c("comp","raintreat"),type="fe")
 plot(vis2)
-summary(lm3) #makes some interesting graphs, shows that D is always lower germ rate than C, but W germ rate is highest in abiotic and lowest in biotic. however, none of these results are significant
+summary(lm3)
 Anova(lm3, type=3)
-lm4<-glmmTMB(germ~comp+raintreat + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
 
 emm_options(rg.limit = 10800)  # increase temporarily
 emm<-emmeans(lm3, ~ comp * raintreat, type="response") #predicted means and CIs by comp and raintreat
-
+emm #gives probabilities for each combination of treatments
 pairs(emm, adjust="tukey") #none of the contrasts are sig, as expected
-#in summary, the treatments did not sig impact germination rate, although we can see some interesting non-significant patterns
+#in summary, the treatments did not sig impact germination rate, although we can see some interesting non-significant patterns (particularly the difference in wet treatment germination in A vs B comp)
 
 
 ##seed count##
@@ -57,10 +56,10 @@ seedcomb<-seed%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%summarise(a
 seedcomb$block<-as.factor(seedcomb$block)
 seedcomb$comp<-factor(seedcomb$comp, levels=c("B", "A"))
 
-#make some models
+#make some models. here, poisson had some convergence issues in some cases with the full set of nested random effects, so I removed br to make it run because I thought it overlaped with the rain treatment and would be the best re to drop. I later switched to a nbinom because of overdispersion, which solves this issue
 s0<-glmmTMB(allseed~1+(1|block/br/brc),ziformula = ~., family="poisson", data=seedcomb)
 s1<-glmmTMB(allseed~raintreat+(1|block/br/brc),ziformula=~., family="poisson", data=seedcomb)
-s2<-glmmTMB(allseed~comp+(1|block/br/brc),ziformula=~., family="poisson", data=seedcomb) #model convergence problem, solve by resolving crossover between comp and random effects
+s2<-glmmTMB(allseed~comp+(1|block/br/brc),ziformula=~., family="poisson", data=seedcomb)
 s00<-glmmTMB(allseed~1+(1|block/br),ziformula = ~., family="poisson", data=seedcomb)
 s02<-glmmTMB(allseed~comp+(1|block/br),ziformula=~., family="poisson", data=seedcomb)
 s3<-glmmTMB(allseed~raintreat*comp+(1|block/br/brc),ziformula=~., family="poisson", data=seedcomb)
@@ -78,8 +77,7 @@ anova(s0, s3, test="Chisq") #sig, 1.355e-12 adding rain and comps with interacti
 anova(s02, s03, test="Chisq") #VERY SIG <2.2e-16 adding rain with interaction does matter
 anova(s4, s3, test="Chisq") #ns 0.1453 the interaction does NOT matter
 anova(s02, s04, test="Chisq") #ns 0.05278, both no brc, then adding rain no interaction does NOT matter 
-anova(s02, s4, test="Chisq") #don't think I can compare these but v sig
-anova(s30, s3, test="Chisq") #very sig, zero-inflation is important to include for this model
+anova(s30, s3, test="Chisq") #very sig, zero-inflation is important to include for this model, which makes sense for the data type and aligns with our hypotheses
 summary(s3)
 Anova(s3, type=3)
 visreg(s3)
@@ -96,7 +94,6 @@ plot(vis3)
 vis4<-ggpredict(s3, terms=c("comp","raintreat"),type="fe")
 plot(vis4)
 
-#next steps: interperate graphs, try to figure out what's going on, make sure the models are ok, visualize raw data, try to figure out dif way to quantify the rainfall? move to new .R file seedSumSM
 
 #need to check for overdispersion and move to nbinom2 if needed
 resid_dev <- residuals(s1, type = "pearson")
@@ -118,7 +115,7 @@ anova(s0, s2, test="Chisq") #sig, 9.319e-15 adding comps alone does matter
 anova(s2, s3, test="Chisq") #ns, 0.0884 adding rain to comps with interaction does NOT matter
 anova(s4, s3, test="Chisq") #ns 0.2421 the interaction does NOT matter
 anova(s2, s4, test="Chisq") #ns
-summary(s3) #this is still the best model
+summary(s3) 
 Anova(s3, type=3)
 visreg(s3)
 
