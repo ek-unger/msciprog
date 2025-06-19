@@ -32,6 +32,17 @@ seedgerm<-seedgerm%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%distinc
 
 ###start of Rachel's tests
 
+#definitely some bonkers outliers
+ggplot(data=seed,aes(x=raintreat, y=seed, color=comp)) +
+  geom_boxplot() +
+  theme_classic() +
+  facet_wrap(~comp)
+
+ggplot(data=subset(seed,germ==1),aes(x=raintreat, y=seed, color=comp)) +
+  geom_boxplot() +
+  theme_classic() +
+  facet_wrap(~comp,scales="free")
+
 #this is the main base model - needs ziformula or else massively fails ZI formula test, which also makes biological sense given low germ rates
 lm<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="poisson", ziformula=~.)
 
