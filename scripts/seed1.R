@@ -9,7 +9,7 @@ library(visreg)
 library(DHARMa)
 library(emmeans)
 library(ggeffects)
-seed<-read.csv("PlantGermSeedNT.csv")
+seed<-read.csv("data_no_touch/PlantGermSeedNT.csv")
 View(seed)
 seed%>%count(tubepres == "N") #in this dataset, 90 tubes (15%) are not found. These are not data points for the following analysis and do not count towards non-germination, so they will now be removed from the dataset.
 seed<-seed%>%filter(tubepres=="Y")
@@ -27,6 +27,68 @@ seed <- seed %>% mutate(germ = case_when(germ == "Y" ~ 1, germ == "N" ~ 0))
 #check if different treatments had impact on germination rate. germ is binary so use family = binomial(link = "logit")
 seedgerm<-seed%>%select(!c(seed, green, full, outoftube, grazed))
 seedgerm<-seedgerm%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%distinct()
+
+
+
+###start of Rachel's tests
+
+#this is the main base model - needs ziformula or else massively fails ZI formula test, which also makes biological sense given low germ rates
+lm<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="poisson", ziformula=~.)
+
+testDispersion(lm)
+testUniformity(lm)
+res <- simulateResiduals(lm)
+plot(res)
+testZeroInflation(lm)
+testOutliers(lm)
+
+#KS test failed even though dispersion is okay. The model thinks the biotic treatment is significantly less variable than the abiotic treatment. This is making me think we need nbinom2
+lm<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom1",ziformula=~., dispformula =~raintreat * comp)
+summary(lm) #note sig disp
+
+#with nbinom2, passes all tests
+#here checking that we haven't overparameterized the zi portion. Although lm3 is the "best", the results are qualitatively identical across models, which is nice
+lm1<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~1)
+lm2<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~comp)
+lm3<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~raintreat)
+lm4<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~raintreat + comp)
+lm5<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~raintreat * comp)
+lm6<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed, family="nbinom2",ziformula=~.)
+
+anova(lm1,lm2,lm3,lm4,lm5,lm6)
+
+lm<-lm3
+
+#all looks good
+testDispersion(lm)
+testUniformity(lm)
+res <- simulateResiduals(lm)
+plot(res)
+testZeroInflation(lm)
+testOutliers(lm)
+
+summary(lm)
+Anova(lm,type=3)
+Anova(lm,type=2)
+
+#quick outlier sensitivity check
+outliers<-outliers(lm, lowerQuantile = 0, upperQuantile = 1, return = c("index", "logical"))
+
+lm_outliers<-glmmTMB(seed ~ raintreat * comp + (1|block/br/brc), data=seed[-outliers,], family="nbinom2",ziformula=~raintreat)
+summary(lm_outliers)
+Anova(lm_outliers,type=3)
+Anova(lm_outliers,type=2)
+
+#count only
+vis <- ggpredict(lm,terms=c("raintreat","comp"), type="count")
+plot(vis)
+
+#zi only
+vis <- ggpredict(lm,terms=c("raintreat"), type="zi_prob")
+plot(vis)
+
+##end of Rachel
+
 
 lm0<-glmmTMB(germ~1 + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
 lm1<-glmmTMB(germ~raintreat + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
