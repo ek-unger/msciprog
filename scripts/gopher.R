@@ -8,8 +8,7 @@ library(visreg)
 library(emmeans)
 library(ggeffects)
 library(DHARMa)
-setwd("C:/Users/emmau/OneDrive/Documents/MSc/field data/datasheets")
-goph<-read.csv("PlotsmdenspgopherCSV.csv")
+goph<-read.csv("data/plotsmdenspgopherCSV.csv")
 goph$block<-as.factor(goph$block)
 goph$raintreat<-as.factor(goph$raintreat)
 goph$comp<-as.factor(goph$comp)
@@ -31,6 +30,8 @@ ggplot(data = goph, aes(x = comp, y = densp)) +
   labs(x = "Neighbourhood treatment",y = "Neighbourhood density (individuals)",color = "Gopher disturbance\n(% cover)")+ 
   theme_classic()
 
+ggsave(filename = "gopher_disturbance.tiff", width = 7, height = 5, device='tiff', dpi=700)
+
 #jitter data points
 ggplot(data = goph, aes(x = comp, y = densp)) +
   geom_boxplot(fill = NA, color = "black") +
@@ -39,8 +40,10 @@ ggplot(data = goph, aes(x = comp, y = densp)) +
   labs(x = "Neighbourhood treatment",y = "Neighbourhood density (individuals)",color = "Gopher disturbance\n(% cover)")+ 
   theme_classic()
 
+
+
 #run some lms. my data is not normal, but is positive and skewed, so using gamma with a log link
-hist(goph$densp, breaks = 10)
+hist(goph$densp, breaks = 20)
 dg<-glmmTMB(densp~percov + (1|block/comp), family=Gamma(link = log), data=goph)
 dg0<-glmmTMB(densp~1 + (1|block/comp), family=Gamma(link = log), data=goph)
 anova(dg0, dg, test="Chisq")
