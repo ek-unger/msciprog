@@ -30,7 +30,7 @@ ggplot(data = goph, aes(x = comp, y = densp)) +
   labs(x = "Neighbourhood treatment",y = "Neighbourhood density (individuals)",color = "Gopher disturbance\n(% cover)")+ 
   theme_classic()
 
-ggsave(filename = "gopher_disturbance.tiff", width = 7, height = 5, device='tiff', dpi=700)
+ggsave(filename = "gopher_disturbance.tiff", width = 7, height = 5, device='tiff', dpi=300)
 
 #jitter data points
 ggplot(data = goph, aes(x = comp, y = densp)) +
