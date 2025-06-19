@@ -23,13 +23,6 @@ seed$br<-factor(seed$br, levels=c("1C","1D","1W","2C","2D","2W","3C","3D","3W","
 seed <- seed %>% mutate(germ = case_when(germ == "Y" ~ 1, germ == "N" ~ 0))
 
 
-##germination rate##
-#check if different treatments had impact on germination rate. germ is binary so use family = binomial(link = "logit")
-seedgerm<-seed%>%select(!c(seed, green, full, outoftube, grazed))
-seedgerm<-seedgerm%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%distinct()
-
-
-
 ###start of Rachel's tests
 
 #definitely some bonkers outliers
@@ -100,6 +93,102 @@ plot(vis)
 
 ##end of Rachel
 
+##EK repeat Rachel with summed seed count data
+##seed count##
+seedcomb<-seed%>%group_by(block, raintreat, comp, br, brc, germ, tubeid)%>%summarise(allseed= sum(seed))
+seedcomb$block<-as.factor(seedcomb$block)
+seedcomb$comp<-factor(seedcomb$comp, levels=c("B", "A"))
+
+#definitely some bonkers outliers
+ggplot(data=seedcomb,aes(x=raintreat, y=allseed, color=comp)) +
+  geom_boxplot() +
+  theme_classic() +
+  facet_wrap(~comp)
+
+ggplot(data=subset(seedcomb,germ==1),aes(x=raintreat, y=allseed, color=comp)) +
+  geom_boxplot() +
+  theme_classic() +
+  facet_wrap(~comp,scales="free")
+
+#this is the main base model - needs ziformula or else massively fails ZI formula test, which also makes biological sense given low germ rates
+lm<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="poisson", ziformula=~.)
+
+testDispersion(lm)
+testUniformity(lm)
+res <- simulateResiduals(lm)
+plot(res)
+testZeroInflation(lm)
+testOutliers(lm)
+summary(lm)
+#This is all this true: KS test failed even though dispersion is okay. The model thinks the biotic treatment is significantly less variable than the abiotic treatment. This is making me think we need nbinom2
+lm<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom1",ziformula=~., dispformula =~raintreat * comp)
+summary(lm) #note sig disp
+
+#still true
+#with nbinom2, passes all tests
+#here checking that we haven't overparameterized the zi portion. Although lm3 is the "best", the results are qualitatively identical across models, which is nice
+lm1<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~1)
+lm2<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~comp)
+lm3<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~raintreat)
+lm4<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~raintreat + comp)
+lm5<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~raintreat * comp)
+lm6<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~.)
+
+anova(lm1,lm2,lm3,lm4,lm5,lm6)
+
+lmSum<-lm3
+
+#all looks good, still true
+testDispersion(lmSum)
+testUniformity(lmSum)
+res <- simulateResiduals(lmSum)
+plot(res)
+testZeroInflation(lmSum)
+testOutliers(lmSum)
+
+summary(lmSum) #looks like there are still more zeros in the D treatment compared to C
+Anova(lmSum,type=3) #interaction ns
+Anova(lmSum,type=2) #raintreat ns at 0.05799
+
+#calculate treatment specific means
+emm<-emmeans(lmSum, ~raintreat * comp, type="response")
+emm
+pairs(emm, adjust="tukey") #all pairs differing in comp treatment sig, all treatments with same comp treatment ns. 
+
+vis<-ggpredict(lmSum, terms=c("raintreat","comp"),type="fe.zi")
+plot(vis)
+vis<-ggpredict(lmSum, terms=c("comp", "raintreat"),type="fe.zi")
+plot(vis)
+
+#quick outlier sensitivity check
+outliers<-outliers(lm, lowerQuantile = 0, upperQuantile = 1, return = c("index", "logical"))
+
+lm_outliers<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb[-outliers,], family="nbinom2",ziformula=~raintreat) #this doesn't run for me but maybe it does for you?
+summary(lm_outliers)
+Anova(lm_outliers,type=3)
+Anova(lm_outliers,type=2)
+
+#count only
+vis <- ggpredict(lmSum,terms=c("raintreat","comp"), type="count")
+plot(vis)
+
+#zi only
+vis <- ggpredict(lmSum,terms=c("raintreat"), type="zi_prob")
+plot(vis)
+
+#RG final model
+lm3<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), data=seedcomb, family="nbinom2",ziformula=~raintreat)
+#EK final model
+s3<-glmmTMB(allseed ~ raintreat * comp + (1|block/br/brc), ziformula=~., family="nbinom2", data=seedcomb)
+#so it's the same I just did not check for zi's other than . and 1
+Anova(s3, type=2) #the results are essentially the same, great. comp v sig, rain ns at 0.05762
+##end of RG/EK code
+
+
+##germination rate##
+#check if different treatments had impact on germination rate. germ is binary so use family = binomial(link = "logit")
+seedgerm<-seed%>%select(!c(seed, green, full, outoftube, grazed))
+seedgerm<-seedgerm%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%distinct()
 
 lm0<-glmmTMB(germ~1 + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
 lm1<-glmmTMB(germ~raintreat + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
@@ -124,10 +213,7 @@ pairs(emm, adjust="tukey") #none of the contrasts are sig, as expected
 #in summary, the treatments did not sig impact germination rate, although we can see some interesting non-significant patterns (particularly the difference in wet treatment germination in A vs B comp)
 
 
-##seed count##
-seedcomb<-seed%>%group_by(block, raintreat, comp, br, brc, tubeid)%>%summarise(allseed= sum(seed))
-seedcomb$block<-as.factor(seedcomb$block)
-seedcomb$comp<-factor(seedcomb$comp, levels=c("B", "A"))
+
 
 #make some models. here, poisson had some convergence issues in some cases with the full set of nested random effects, so I removed br to make it run because I thought it overlaped with the rain treatment and would be the best re to drop. I later switched to a nbinom because of overdispersion, which solves this issue
 s0<-glmmTMB(allseed~1+(1|block/br/brc),ziformula = ~., family="poisson", data=seedcomb)
