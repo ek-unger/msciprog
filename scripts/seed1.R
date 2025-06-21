@@ -1,5 +1,5 @@
 ###running basic seed lm###
-#this script checks how germination and seed count changes with rain and competition#
+#this script checks how germination and seed count changes with rain and competition. also includes germination figures#
 library(dplyr)
 library(tidyverse)
 library(car)
@@ -198,13 +198,59 @@ lm2<-glmmTMB(germ~comp + (1/block/br/brc), family = binomial(link = "logit"), da
 anova(lm0,lm2, teset="Chisq") #ns, p=0.8443
 lm3<-glmmTMB(germ~comp*raintreat + (1/block/br/brc), family = binomial(link = "logit"), data=seedgerm)
 anova(lm0,lm3, test="Chisq") #ns, p=0.2575
+emmeans(lm3, ~comp*raintreat, type="response")
+Anova(lm3, type=3)
+Anova(lm3, type=2)
 visreg(lm3, scale="response")
 vis<-ggpredict(lm3, terms=c("raintreat","comp"),type="fe")
 plot(vis)
 vis2<-ggpredict(lm3, terms=c("comp","raintreat"),type="fe")
-plot(vis2)
+plot(vis2) + labs(title= "Predicticted probability of germination", y="Germination rate", x="Competition treatment", color="Rain treatment")
+ggsave(filename = "germination_predict.tiff", width = 6, height = 4, device='tiff', dpi=300)
+
+#visualize raw data
+
+summary_df <- seedgerm %>%
+  group_by(comp, raintreat) %>%
+  summarise(
+    mean_val = mean(germ, na.rm = TRUE),
+    se = sd(germ, na.rm = TRUE) / sqrt(n()),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ci95 = se * qt(0.975, df = n - 1)  # 95% CI
+  )
+
+summary_df <- summary_df %>%
+  mutate(raintreat = case_when(
+    raintreat == "C" ~ "Control",
+    raintreat == "D" ~ "Dry",
+    raintreat == "W" ~ "Wet",
+    TRUE ~ raintreat
+  ))
+
+summary_df<-summary_df%>%mutate(comp=case_when(comp=="A"~"Abiotic", comp=="B"~"Biotic"))
+
+# Plot with error bars
+ggplot(summary_df, aes(x = comp, y = mean_val, color = raintreat, group = raintreat)) +
+  geom_point(position = position_dodge(width = 0.3), size = 3) +
+  geom_errorbar(
+    aes(ymin = mean_val - ci95, ymax = mean_val + ci95),
+    position = position_dodge(width = 0.3),
+    width = 0.2
+  ) +
+  scale_color_manual(values=c("Control"="brown4", "Dry"="darkorange2", "Wet"="blue2"))+
+  labs(
+    x = "Competition treatment",
+    y = "Germination rate",
+    color = "Rain treatment"
+  ) +
+  theme_classic()
+ggsave(filename = "germination_raw.tiff", width = 6, height = 4, device='tiff', dpi=300)
+
+
 summary(lm3)
-Anova(lm3, type=3)
 
 emm_options(rg.limit = 10800)  # increase temporarily
 emm<-emmeans(lm3, ~ comp * raintreat, type="response") #predicted means and CIs by comp and raintreat
